@@ -1,0 +1,213 @@
+
+---
+title: "Muscle Mass Regression Analysis"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: scroll
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(flexdashboard)
+library(readr)
+library(knitr)
+library(DT)
+library(shiny)
+
+# Load the dataset
+CH01PR27 <- read_table2("CH01PR27.txt", col_names = c("Y", "X"))
+
+# Center the variable X for higher-order models
+CH01PR27 <- CH01PR27 %>%
+  mutate(x_centered = X - mean(X))
+```
+
+Row {data-orientation=rows}
+-----------------------------------------------------------------------
+
+### Interactive Data Exploration
+
+A person's muscle mass is expected to decrease with age. To explore this relationship in women, a nutritionist randomly selected 15 women from each 10-year age group, beginning with age 40 and ending with age 79. The results follow; $X$ is age, and $Y$ is a measure of muscle mass. Assume that first-order regression model (1.1) is appropriate.
+\begin{tabular}{rrrrrrrr}
+$i:$ & \multicolumn{1}{c}{$\mathbf{1}$} & \multicolumn{1}{c}{$\mathbf{2}$} & $\mathbf{3}$ & $\ldots$ & $\mathbf{5 8}$ & $\mathbf{5 9}$ & $\mathbf{6 0}$ \\
+\hline$X_i:$ & 43 & 41 & 47 & $\ldots$ & 76 & 72 & 76 \\
+$Y_i:$ & 106 & 106 & 97 & $\ldots$ & 56 & 70 & 74
+\end{tabular}
+
+**Explore the dataset interactively:**
+
+```{r}
+# Create an interactive data exploration widget
+datatable(
+  CH01PR27,
+  options = list(pageLength = 10, autoWidth = TRUE),
+  caption = "Interactive Table of Muscle Mass Data"
+)
+```
+
+**Customize the Scatter Plot:**
+
+```{r}
+# Add an input widget for group selection
+selectInput(
+  inputId = "group_selection",
+  label = "Choose Age Range:",
+  choices = c("40-49", "50-59", "60-69", "70-79"),
+  selected = "40-49"
+)
+
+# Filter dataset based on age range
+filtered_data <- reactive({
+  age_ranges <- list(
+    "40-49" = CH01PR27 %>% filter(X >= 40 & X < 50),
+    "50-59" = CH01PR27 %>% filter(X >= 50 & X < 60),
+    "60-69" = CH01PR27 %>% filter(X >= 60 & X < 70),
+    "70-79" = CH01PR27 %>% filter(X >= 70 & X <= 79)
+  )
+  age_ranges[[input$group_selection]]
+})
+
+# Interactive scatter plot for the selected age range
+renderPlotly({
+  ggplot(filtered_data(), aes(x = X, y = Y)) +
+    geom_point(color = "blue", alpha = 0.7) +
+    labs(
+      title = paste("Muscle Mass vs. Age (", input$group_selection, ")", sep = ""),
+      x = "Age (X)", y = "Muscle Mass (Y)"
+    ) +
+    theme_minimal()
+})
+```
+
+Row {data-orientation=rows}
+-----------------------------------------------------------------------
+
+### First-Order Regression
+
+**Problem Statement**:  
+A nutritionist wants to explore the relationship between muscle mass (\(Y\)) and age (\(X\)) in women. The goal is to fit a first-order regression model and analyze the relationship.
+
+#### Solution and Visualization
+
+```{r}
+#  Problem 1.27:  Fit the first-order regression model
+model1 <- lm(Y ~ X, data = CH01PR27)
+summary1 <- summary(model1)
+
+# Display regression summary
+kable(summary1$coefficients, caption = "Summary of First-Order Regression Coefficients")
+
+# Plot scatter and regression line
+p1 <- ggplot(CH01PR27, aes(x = X, y = Y)) +
+  geom_point(color = "blue", alpha = 0.7) +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  labs(
+    title = "First-Order Regression: Muscle Mass vs. Age",
+    x = "Age (X)", y = "Muscle Mass (Y)"
+  ) +
+  theme_minimal()
+
+# Convert to interactive plot
+ggplotly(p1)
+```
+
+
+### Second-Order Regression
+
+**Problem Statement**:  
+Extend the analysis by fitting a second-order (quadratic) regression model and evaluating its fit. Additionally, predict the mean and individual muscle mass for a 48-year-old woman.
+
+#### Solution and Visualization
+
+```{r}
+# Problem 8.4: Fit second-order regression model
+model2 <- lm(Y ~ x_centered + I(x_centered^2), data = CH01PR27)
+summary2 <- summary(model2)
+
+# Display regression summary
+kable(summary2$coefficients, caption = "Summary of Second-Order Regression Coefficients")
+
+# Generate predictions for visualization
+X.new <- seq(min(CH01PR27$x_centered), max(CH01PR27$x_centered), length.out = 100)
+fit2 <- predict(model2, newdata = data.frame(x_centered = X.new))
+fit_data <- data.frame(x_centered = X.new, fit2)
+
+# Plot data with quadratic regression line
+p2 <- ggplot(CH01PR27, aes(x = x_centered, y = Y)) +
+  geom_point(color = "green", alpha = 0.7) +
+  geom_line(data = fit_data, aes(x = x_centered, y = fit2), color = "blue") +
+  labs(
+    title = "Second-Order Regression: Quadratic Fit",
+    x = "Centered Age (X)", y = "Muscle Mass (Y)"
+  ) +
+  theme_minimal()
+
+# Convert to interactive plot
+ggplotly(p2)
+
+# Confidence and prediction intervals for age 48
+age_centered <- 48 - mean(CH01PR27$X)
+confidence_interval <- predict(model2, newdata = data.frame(x_centered = age_centered), interval = "confidence")
+prediction_interval <- predict(model2, newdata = data.frame(x_centered = age_centered), interval = "prediction")
+
+# Display intervals as a table
+interval_data <- data.frame(
+  Type = c("Confidence Interval", "Prediction Interval"),
+  Lower = c(confidence_interval[2], prediction_interval[2]),
+  Upper = c(confidence_interval[3], prediction_interval[3])
+)
+kable(interval_data, caption = "95% Confidence and Prediction Intervals for Age 48")
+```
+
+Row {data-orientation=rows}
+-----------------------------------------------------------------------
+
+### Residual Diagnostics: Normal Q-Q Plot
+
+
+#### Visualizing Normality of Residuals:
+```{r}
+# Fit the second-order regression model
+model2 <- lm(Y ~ x_centered + I(x_centered^2), data = CH01PR27)
+
+# Normal Q-Q plot
+residuals <- resid(model2)
+p_qq <- ggplot(data.frame(Residuals = residuals), aes(sample = Residuals)) +
+  stat_qq() +
+  stat_qq_line(color = "blue") +
+  labs(
+    title = "Normal Q-Q Plot for Residuals",
+    x = "Theoretical Quantiles",
+    y = "Sample Quantiles"
+  ) +
+  theme_minimal()
+
+# Convert to interactive plot
+ggplotly(p_qq)
+
+```
+
+### Residuals vs. Fitted Values:
+
+
+```{r}
+# Residuals vs. fitted values plot
+fitted_values <- fitted(model2)
+p_residuals <- ggplot(data.frame(Fitted = fitted_values, Residuals = residuals), aes(x = Fitted, y = Residuals)) +
+  geom_point(color = "purple", alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Residuals vs. Fitted Values",
+    x = "Fitted Values",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+
+# Convert to interactive plot
+ggplotly(p_residuals)
+```
+
+
